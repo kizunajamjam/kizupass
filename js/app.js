@@ -3,6 +3,7 @@ import {
 } from './crypto.js';
 import {
   createVault, validateVault, upsertEntry, deleteEntry, liveEntries, mergeVaults, searchEntries,
+  clearPreviousPassword, passwordIssues, filterEntries,
 } from './vault.js';
 import { generatePassword, estimateBits } from './generator.js';
 import { toCsv } from './csv.js';
@@ -33,6 +34,7 @@ let hiddenAt = null;
 let clipboardTimer = null;
 let generatorTarget = null;
 let failedUnlocks = 0;
+let listFilter = 'all';
 
 // ---------- 画面 ----------
 
@@ -285,9 +287,30 @@ $('unlock-form').addEventListener('submit', async (e) => {
 
 // ---------- 一覧 ----------
 
+function badge(text, cls) {
+  return Object.assign(document.createElement('span'), { className: `badge ${cls}`, textContent: text });
+}
+
 function renderList() {
   const all = liveEntries(session.vault);
-  const items = searchEntries(all, $('search').value);
+  const issues = passwordIssues(all);
+  const items = searchEntries(filterEntries(all, listFilter, issues), $('search').value);
+  // 絞り込みの件数と、変更の進み具合
+  const counts = {
+    all: all.length,
+    todo: filterEntries(all, 'todo', issues).length,
+    done: filterEntries(all, 'done', issues).length,
+    risk: filterEntries(all, 'risk', issues).length,
+  };
+  for (const chip of document.querySelectorAll('.chip')) {
+    chip.querySelector('span').textContent = counts[chip.dataset.filter];
+    chip.setAttribute('aria-selected', String(chip.dataset.filter === listFilter));
+  }
+  $('progress-wrap').hidden = all.length === 0;
+  $('progress-bar').style.width = all.length ? `${(counts.done / all.length) * 100}%` : '0';
+  $('progress-text').textContent = `${all.length}件中 ${counts.done}件 変更済み`
+    + (counts.risk ? `・要注意 ${counts.risk}件（使い回し・弱いパスワード）` : '');
+  $('no-match').hidden = all.length === 0 || items.length > 0;
   const list = $('entry-list');
   list.replaceChildren(...items.map((e) => {
     const li = document.createElement('li');
@@ -300,7 +323,12 @@ function renderList() {
     const sub = document.createElement('span');
     sub.className = 'sub';
     sub.textContent = e.username || e.url;
-    main.append(title, sub);
+    const badges = document.createElement('span');
+    badges.className = 'badges';
+    badges.append(e.changed ? badge('変更済み', 'done') : badge('未変更', 'todo'));
+    if (issues.get(e.id).reused) badges.append(badge('使い回し', 'risk'));
+    if (issues.get(e.id).weak) badges.append(badge('弱い', 'risk'));
+    main.append(title, sub, badges);
     main.addEventListener('click', () => openEntry(e.id));
     const copy = document.createElement('button');
     copy.type = 'button';
@@ -316,6 +344,12 @@ function renderList() {
 }
 
 $('search').addEventListener('input', renderList);
+for (const chip of document.querySelectorAll('.chip')) {
+  chip.addEventListener('click', () => {
+    listFilter = chip.dataset.filter;
+    renderList();
+  });
+}
 $('btn-lock').addEventListener('click', lock);
 $('btn-add').addEventListener('click', () => openEntry(null));
 
@@ -349,10 +383,47 @@ function openEntry(id) {
   }
   form.elements.password.type = 'password';
   $('entry-toggle').textContent = '表示';
+  form.elements.changed.checked = !!entry?.changed;
+  $('entry-changed-hint').hidden = true;
+  showEntryExtras(entry);
   $('entry-delete').hidden = !entry;
   $('dlg-entry').showModal();
   if (!entry) form.elements.title.focus();
 }
+
+function showEntryExtras(entry) {
+  // 使い回し・弱いパスワードの注意
+  const live = liveEntries(session.vault);
+  const issue = entry && passwordIssues(live).get(entry.id);
+  const notes = [];
+  if (issue?.reused) {
+    const others = live.filter((e) => e.id !== entry.id && e.password === entry.password).map((e) => e.title);
+    notes.push(`このパスワードは他でも使われています（${others.join('、')}）。サイトごとに別のパスワードにしましょう。`);
+  }
+  if (issue?.weak) notes.push('このパスワードは弱いです。「パスワードを生成…」で強いものに変えましょう。');
+  $('entry-issues').textContent = notes.join('\n');
+  $('entry-issues').hidden = notes.length === 0;
+  // 前のパスワード(変更に失敗したときに戻せるように)
+  const prev = entry?.previousPassword;
+  $('prev-row').hidden = !prev;
+  $('prev-pw').value = prev || '';
+  $('prev-pw').type = 'password';
+  $('prev-toggle').textContent = '表示';
+  $('prev-date').textContent = prev && entry.passwordUpdatedAt
+    ? `（${new Date(entry.passwordUpdatedAt).toLocaleDateString('ja-JP')} に変更）` : '';
+}
+
+$('prev-toggle').addEventListener('click', () => {
+  const hidden = $('prev-pw').type === 'password';
+  $('prev-pw').type = hidden ? 'text' : 'password';
+  $('prev-toggle').textContent = hidden ? '隠す' : '表示';
+});
+$('prev-copy').addEventListener('click', () => copyText($('prev-pw').value, '前のパスワード'));
+$('prev-clear').addEventListener('click', async () => {
+  if (!editingId || !window.confirm('前のパスワードを消しますか？サイト側で新しいパスワードに変わったことを確認してから消してください。')) return;
+  session.vault = clearPreviousPassword(session.vault, editingId);
+  if (await save('前のパスワードを消しました')) showEntryExtras(session.vault.entries.find((e) => e.id === editingId));
+});
 
 function closeEntry() {
   $('dlg-entry').close();
@@ -362,7 +433,7 @@ function closeEntry() {
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const fields = { id: editingId };
+  const fields = { id: editingId, changed: form.elements.changed.checked };
   for (const name of ['title', 'username', 'password', 'url', 'notes']) fields[name] = form.elements[name].value;
   const before = session.vault;
   session.vault = upsertEntry(session.vault, fields).vault;
@@ -450,6 +521,10 @@ $('gen-use').addEventListener('click', () => {
   generatorTarget.value = pw;
   generatorTarget.type = 'text';
   $('entry-toggle').textContent = '隠す';
+  // 生成したパスワードに変えたら「変更済み」にする(外すこともできる)
+  form.elements.changed.checked = true;
+  $('entry-changed-hint').hidden = !editingId;
+  $('entry-issues').hidden = true; // 注意は前のパスワードについてのものなので消す
   $('dlg-generator').close();
 });
 $('dlg-generator').addEventListener('close', () => { $('gen-output').textContent = ''; });

@@ -71,7 +71,18 @@
         <button type="button" id="update-apply" class="primary">更新する</button>
       </div>
     </div>
+    <div class="filters" role="tablist" aria-label="絞り込み">
+      <button type="button" class="chip" data-filter="all" aria-selected="true">すべて <span></span></button>
+      <button type="button" class="chip" data-filter="todo" aria-selected="false">未変更 <span></span></button>
+      <button type="button" class="chip" data-filter="done" aria-selected="false">変更済み <span></span></button>
+      <button type="button" class="chip" data-filter="risk" aria-selected="false">要注意 <span></span></button>
+    </div>
+    <div class="progress-wrap" id="progress-wrap" hidden>
+      <div class="progress"><div id="progress-bar"></div></div>
+      <p id="progress-text" class="muted small"></p>
+    </div>
     <ul id="entry-list" class="list"></ul>
+    <p id="no-match" class="muted center-text" hidden>該当する項目はありません。</p>
     <p id="empty" class="muted center-text" hidden>まだ何も登録されていません。<br>右下の ＋ から追加できます。</p>
     <button id="btn-add" type="button" class="fab" aria-label="追加">＋</button>
   </section>
@@ -97,6 +108,19 @@
         </span>
       </label>
       <button type="button" id="entry-generate" class="link">パスワードを生成…</button>
+      <p id="entry-issues" class="warn small" hidden></p>
+      <label class="check"><input type="checkbox" name="changed"> このサイトでパスワードを変更済み</label>
+      <p id="entry-changed-hint" class="muted small" hidden>サイト側でパスワードの変更が終わったら保存してください。前のパスワードは残るので、失敗しても戻せます。</p>
+      <div id="prev-row" hidden>
+        <label>前のパスワード<span id="prev-date"></span>
+          <span class="row">
+            <input id="prev-pw" type="password" readonly autocomplete="off">
+            <button type="button" id="prev-toggle">表示</button>
+            <button type="button" id="prev-copy">コピー</button>
+            <button type="button" id="prev-clear" class="danger">消す</button>
+          </span>
+        </label>
+      </div>
       <label>URL
         <span class="row">
           <input name="url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false">

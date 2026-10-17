@@ -96,7 +96,21 @@ form > button.primary { width: 100%; margin-top: 8px; }
 }
 .topbar input { margin: 0; flex: 1; }
 button.icon { padding: 8px 12px; font-size: 1.1rem; }
-.list { list-style: none; margin: 0 auto; padding: 8px 16px 96px; max-width: 720px; }
+.filters { display: flex; gap: 6px; padding: 10px 16px 0; overflow-x: auto; max-width: 720px; margin: 0 auto; }
+.chip { padding: 6px 12px; border-radius: 999px; font-size: .85rem; }
+.chip[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.chip span { opacity: .8; }
+.progress-wrap { max-width: 720px; margin: 0 auto; padding: 8px 16px 0; }
+.progress-wrap p { margin: 4px 0 0; }
+.progress { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+#progress-bar { height: 100%; width: 0; background: #1f9d55; transition: width .3s; }
+.badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+.badge { font-size: .7rem; padding: 1px 6px; border-radius: 6px; border: 1px solid currentColor; }
+.badge.done { color: #1f9d55; }
+.badge.todo { color: var(--muted); }
+.badge.risk { color: var(--danger); }
+label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.list { list-style: none; margin: 0 auto; padding: 0 16px 96px; max-width: 720px; }
 .list li { display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: 12px; margin: 8px 0; padding: 4px 8px 4px 4px; }
 .entry { flex: 1; min-width: 0; text-align: left; border: 0; background: none; display: flex; flex-direction: column; }
 .entry .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
@@ -132,3 +146,4 @@ dialog::backdrop { background: rgb(0 0 0 / 45%); }
   background: #000c; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: .9rem;
   max-width: calc(100% - 32px); bottom: calc(90px + env(safe-area-inset-bottom));
 }
+#entry-issues { white-space: pre-line; }

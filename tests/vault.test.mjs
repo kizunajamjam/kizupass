@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createVault, upsertEntry, deleteEntry, liveEntries, mergeVaults, searchEntries, validateVault,
+  clearPreviousPassword, passwordIssues, filterEntries,
 } from '../js/vault.js';
 import { generatePassword, estimateBits, CHARSETS } from '../js/generator.js';
 
@@ -83,4 +84,53 @@ test('生成したパスワードは長さと文字種の条件を満たす', ()
   assert.match(digits, /^[0-9]{30}$/);
   assert.throws(() => generatePassword({ lower: false, upper: false, digits: false, symbols: false }));
   assert.ok(estimateBits(generatePassword({ length: 20 })) > 120);
+});
+
+test('パスワードを変えると前のパスワードが残り、変更済みの印は保存される', () => {
+  const r = upsertEntry(createVault(), { title: 'A', password: 'old-pass' }, 1000);
+  assert.equal(r.entry.changed, false);
+  assert.equal(r.entry.passwordUpdatedAt, 1000);
+  let v = upsertEntry(r.vault, { id: r.entry.id, title: 'A', password: 'new-pass', changed: true }, 2000).vault;
+  let e = v.entries[0];
+  assert.equal(e.previousPassword, 'old-pass');
+  assert.equal(e.passwordUpdatedAt, 2000);
+  assert.equal(e.changed, true);
+  // パスワード以外の変更では前のパスワードは変わらない
+  v = upsertEntry(v, { id: e.id, title: 'A2', password: 'new-pass', changed: true }, 3000).vault;
+  e = v.entries[0];
+  assert.equal(e.previousPassword, 'old-pass');
+  assert.equal(e.passwordUpdatedAt, 2000);
+  v = clearPreviousPassword(v, e.id, 4000);
+  assert.equal('previousPassword' in v.entries[0], false);
+  assert.ok(v.entries[0].updatedAt >= 4000);
+  // 削除すると前のパスワードも残らない
+  v = upsertEntry(v, { id: e.id, title: 'A2', password: 'third', changed: true }, 5000).vault;
+  v = deleteEntry(v, e.id, 6000);
+  assert.equal(v.entries[0].previousPassword, undefined);
+});
+
+test('使い回し・弱いパスワードの検出と絞り込み', () => {
+  let v = createVault();
+  v = upsertEntry(v, { title: 'A', password: 'password1' }).vault;
+  v = upsertEntry(v, { title: 'B', password: 'password1' }).vault;
+  v = upsertEntry(v, { title: 'C', password: generatePassword({ length: 20 }), changed: true }).vault;
+  v = upsertEntry(v, { title: 'D', password: '' }).vault;
+  const list = liveEntries(v);
+  const issues = passwordIssues(list);
+  const byTitle = Object.fromEntries(list.map((e) => [e.title, issues.get(e.id)]));
+  assert.deepEqual(byTitle.A, { reused: true, weak: true });
+  assert.deepEqual(byTitle.C, { reused: false, weak: false });
+  assert.deepEqual(byTitle.D, { reused: false, weak: false });
+  const titles = (f) => filterEntries(list, f, issues).map((e) => e.title);
+  assert.deepEqual(titles('done'), ['C']);
+  assert.deepEqual(titles('todo'), ['A', 'B', 'D']);
+  assert.deepEqual(titles('risk'), ['A', 'B']);
+  assert.equal(titles('all').length, 4);
+});
+
+test('追加項目の型が違うデータは拒否', () => {
+  const ok = { id: 'a', updatedAt: 1, title: 't', username: '', password: '', url: '', notes: '' };
+  assert.doesNotThrow(() => validateVault({ entries: [{ ...ok, changed: true, previousPassword: 'x', passwordUpdatedAt: 5 }] }));
+  assert.throws(() => validateVault({ entries: [{ ...ok, changed: 'yes' }] }));
+  assert.throws(() => validateVault({ entries: [{ ...ok, previousPassword: 1 }] }));
 });
