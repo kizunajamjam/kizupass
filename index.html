@@ -99,7 +99,7 @@
       <button type="button" id="entry-generate" class="link">パスワードを生成…</button>
       <label>URL
         <span class="row">
-          <input name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <input name="url" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false">
           <button type="button" id="entry-open">開く</button>
         </span>
       </label>
@@ -147,6 +147,10 @@
       <button type="button" id="btn-export" class="primary block">暗号化ファイルを書き出す</button>
       <button type="button" id="btn-import" class="block">ファイルを読み込んでマージ</button>
       <p id="last-export" class="muted small"></p>
+      <h2>他のパスワード管理へ移す</h2>
+      <p class="muted small">Apple の「パスワード」や Google Chrome に読み込める CSV ファイルを書き出します。<strong>このファイルは暗号化されません。</strong>読み込んだらすぐに削除してください。</p>
+      <button type="button" id="btn-csv-apple" class="block">Apple の「パスワード」用に書き出す</button>
+      <button type="button" id="btn-csv-chrome" class="block">Google Chrome 用に書き出す</button>
       <h2>セキュリティ</h2>
       <button type="button" id="btn-change-pw" class="block">マスターパスワードを変更</button>
       <p id="persist-status" class="muted small"></p>
@@ -160,6 +164,23 @@
       <div class="actions">
         <span class="spacer"></span>
         <button type="button" id="settings-close">閉じる</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- お知らせ -->
+  <dialog id="dlg-info">
+    <form method="dialog">
+      <h2 id="info-title"></h2>
+      <ol id="info-steps" class="steps"></ol>
+      <p id="info-warn" class="warn" hidden></p>
+      <div id="info-skipped" hidden>
+        <p class="small">URL が登録されていないため、次の項目は書き出していません。URL を追加してもう一度書き出すか、手で移してください。</p>
+        <ul id="info-skipped-list" class="small"></ul>
+      </div>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="submit" class="primary">閉じる</button>
       </div>
     </form>
   </dialog>

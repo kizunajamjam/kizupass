@@ -10,6 +10,7 @@
     "js/crypto.js",
     "js/vault.js",
     "js/generator.js",
+    "js/csv.js",
     "js/store.js",
     "js/update.js",
     "js/vendor/argon2.umd.min.js",

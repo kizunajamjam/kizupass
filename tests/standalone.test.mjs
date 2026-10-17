@@ -10,9 +10,9 @@ const hash = (s) => `'sha256-${createHash('sha256').update(s, 'utf8').digest('ba
 
 test('ファイル版は外部ファイルを一切参照しない', () => {
   assert.doesNotMatch(html, /\s(src|href)="(?!data:|#)/);
-  // 許可するのはライブラリのライセンス表記と、入力されたURLに https:// を補う処理だけ
+  // 許可するのはライブラリのライセンス表記と、入力されたURLに https:// を補う処理(2か所)だけ
   const urls = [...html.matchAll(/https?:\/\/[^\s'"`)]*/g)].map((m) => m[0]);
-  assert.deepEqual(urls, ['https://www.npmjs.com/package/hash-wasm', 'https://${url}']);
+  assert.deepEqual(urls, ['https://www.npmjs.com/package/hash-wasm', 'https://${s}', 'https://${url}']);
 });
 
 test('CSP で通信を全面禁止し、埋め込みスクリプトはハッシュで許可する', () => {

@@ -116,6 +116,8 @@ dialog {
 dialog::backdrop { background: rgb(0 0 0 / 45%); }
 .actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
 .spacer { flex: 1; }
+.steps { padding-left: 1.4em; }
+.steps li { margin: 6px 0; }
 .checks { display: grid; grid-template-columns: 1fr 1fr; }
 .checks label { margin: 6px 0; color: var(--text); }
 #gen-output { display: block; padding: 12px; background: var(--bg); border-radius: 10px; word-break: break-all; min-height: 3em; font-size: 1.05rem; }

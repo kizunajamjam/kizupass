@@ -5,6 +5,7 @@ import {
   createVault, validateVault, upsertEntry, deleteEntry, liveEntries, mergeVaults, searchEntries,
 } from './vault.js';
 import { generatePassword, estimateBits } from './generator.js';
+import { toCsv } from './csv.js';
 import { loadEnvelope, saveEnvelope, clearAll, requestPersist } from './store.js';
 import { getStatus, checkUpdate, applyUpdate, safeCommitUrl } from './update.js';
 
@@ -489,7 +490,9 @@ $('btn-export').addEventListener('click', async () => {
   }
 });
 
-async function saveFile(file) {
+const VAULT_FILE_TYPE = { description: 'kizupass 保管庫', accept: { 'application/json': ['.kizupass'] } };
+
+async function saveFile(file, type = VAULT_FILE_TYPE) {
   // スマホ: 共有シート(iPhone は「"ファイル"に保存」で iCloud Drive を選べる)
   if (window.matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
     await navigator.share({ files: [file] });
@@ -499,7 +502,7 @@ async function saveFile(file) {
   if (window.showSaveFilePicker) {
     const handle = await window.showSaveFilePicker({
       suggestedName: file.name,
-      types: [{ description: 'kizupass 保管庫', accept: { 'application/json': ['.kizupass'] } }],
+      types: [type],
     });
     const w = await handle.createWritable();
     await w.write(file);
@@ -543,6 +546,81 @@ $('btn-import').addEventListener('click', async () => {
     toast(err instanceof WrongPasswordError ? 'パスワードが違います' : err.message);
   }
 });
+
+// ---------- 他のパスワード管理へ移す(暗号化されない CSV) ----------
+
+const CSV_TARGETS = {
+  apple: {
+    label: 'Apple の「パスワード」',
+    steps: [
+      'Mac：「パスワード」アプリを開き、メニューの「ファイル」→「パスワードを読み込む」で、書き出した CSV を選ぶ。',
+      'iPhone（iOS 18.2 以降）：「設定」→「アプリ」→「Safari」→「読み込む」で、書き出した CSV を選ぶ。',
+      '読み込めたら、CSV ファイルを削除する（ゴミ箱・「最近削除した項目」からも）。',
+    ],
+  },
+  chrome: {
+    label: 'Google Chrome',
+    steps: [
+      'パソコンの Chrome で、アドレスバーに chrome://password-manager/settings と入力して開く。',
+      '「パスワードをインポート」→「ファイルを選択」で、書き出した CSV を選ぶ。',
+      '読み込めたら、CSV ファイルを削除する（ゴミ箱からも）。',
+    ],
+  },
+};
+
+function showInfo({ title, steps, warn = '', skipped = [] }) {
+  $('info-title').textContent = title;
+  $('info-steps').replaceChildren(...steps.map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+  $('info-warn').textContent = warn;
+  $('info-warn').hidden = !warn;
+  $('info-skipped-list').replaceChildren(...skipped.map((t) => Object.assign(document.createElement('li'), { textContent: t })));
+  $('info-skipped').hidden = skipped.length === 0;
+  $('dlg-info').showModal();
+}
+
+async function exportCsv(format) {
+  const target = CSV_TARGETS[format];
+  const ok = window.confirm(
+    `${target.label}に読み込むためのファイルを書き出します。\n\n`
+    + 'このファイルは暗号化されず、誰でも中身を読めます。\n'
+    + '・iCloud Drive やメールなど、他人や他のサービスに渡る場所には保存しない\n'
+    + '・Excel などで開かない\n'
+    + '・読み込んだらすぐ削除する\n\n続けますか？',
+  );
+  if (!ok) return;
+  const pw = await askPassword({ title: '確認のためマスターパスワードを入力', message: '暗号化されていないファイルを書き出すため、本人確認をします。' });
+  if (pw === null) return;
+  try {
+    await busy(async () => openWithPassword(await loadEnvelope(), pw));
+  } catch (err) {
+    toast(err instanceof WrongPasswordError ? 'パスワードが違います' : err.message);
+    return;
+  }
+  const { csv, count, skipped } = toCsv(liveEntries(session.vault), format);
+  if (count === 0) {
+    showInfo({ title: '書き出せる項目がありません', steps: ['書き出すには、各項目に URL を登録してください。'], skipped });
+    return;
+  }
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const file = new File([csv], `kizupass-${format}-${stamp}.csv`, { type: 'text/csv' });
+  try {
+    await saveFile(file, { description: 'CSV', accept: { 'text/csv': ['.csv'] } });
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('書き出しに失敗しました');
+    return;
+  }
+  $('dlg-settings').close();
+  showInfo({
+    title: `${count}件を書き出しました`,
+    steps: target.steps,
+    warn: 'CSV ファイルは暗号化されていません。読み込みが終わったら必ず削除してください。',
+    skipped,
+  });
+}
+
+$('btn-csv-apple').addEventListener('click', () => exportCsv('apple'));
+$('btn-csv-chrome').addEventListener('click', () => exportCsv('chrome'));
 
 /** 現在の鍵と同じ設定(ソルト含む)で暗号化されていれば、パスワード再入力なしで開く */
 async function openWithSameKey(env) {

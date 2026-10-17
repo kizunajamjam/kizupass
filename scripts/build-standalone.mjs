@@ -12,7 +12,7 @@ const read = (p) => readFile(new URL(p, root), 'utf8');
 const sha256b64 = (s) => createHash('sha256').update(s, 'utf8').digest('base64');
 
 // 依存される側から順に並べる
-const MODULES = ['generator.js', 'vault.js', 'crypto.js', 'store.js', 'update.js', 'app.js'];
+const MODULES = ['generator.js', 'vault.js', 'crypto.js', 'csv.js', 'store.js', 'update.js', 'app.js'];
 
 /** ES モジュールを、モジュール表 __kp に登録する関数スコープへ変換する */
 function wrapModule(name, src) {
