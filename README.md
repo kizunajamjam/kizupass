@@ -38,7 +38,9 @@ iCloud Drive は iPhone・Mac に標準で入っていて、Windows でも「iCl
 
 HTTPS で配信する必要があります（Web Crypto と Service Worker の要件）。
 
-- **GitHub Pages**：Settings → Pages → Branch: `main` / `/ (root)`。
+- **GitHub Pages**（このリポジトリで使用中）：Settings → Pages → Source を「GitHub Actions」にします。
+  以後 `main` に push するたびに、テストが通れば `.github/workflows/pages.yml` が自動で公開します。
+  公開URL: https://kizunajamjam.github.io/kizupass/
   無料プランでは**公開リポジトリ**でのみ使えます。コードが公開されてもパスワードのデータはリポジトリに含まれないので、安全性は変わりません。
 - **Cloudflare Pages**：非公開リポジトリのまま無料で公開できます。ビルドコマンドは空、出力ディレクトリは `/` にします。
 
