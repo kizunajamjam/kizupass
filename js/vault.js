@@ -11,11 +11,15 @@ export function validateVault(v) {
   if (!v || typeof v !== 'object' || !Array.isArray(v.entries)) {
     throw new Error('保管庫のデータ形式が正しくありません');
   }
+  const ids = new Set();
   for (const e of v.entries) {
-    if (!e || typeof e.id !== 'string' || typeof e.updatedAt !== 'number') {
+    if (!e || typeof e.id !== 'string' || !Number.isFinite(e.updatedAt) || ids.has(e.id)
+        || (!e.deleted && !FIELDS.every((f) => typeof e[f] === 'string'))) {
       throw new Error('保管庫のデータ形式が正しくありません');
     }
+    ids.add(e.id);
   }
+  if (!Number.isFinite(v.updatedAt)) v.updatedAt = 0;
   return v;
 }
 

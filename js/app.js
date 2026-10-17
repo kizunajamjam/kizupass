@@ -1,11 +1,18 @@
 import {
-  createKey, seal, openWithKey, openWithPassword, toB64, WrongPasswordError,
+  createKey, seal, openWithKey, openWithPassword, sameKdf, needsUpgrade, WrongPasswordError,
 } from './crypto.js';
 import {
   createVault, validateVault, upsertEntry, deleteEntry, liveEntries, mergeVaults, searchEntries,
 } from './vault.js';
 import { generatePassword, estimateBits } from './generator.js';
 import { loadEnvelope, saveEnvelope, clearAll, requestPersist } from './store.js';
+import { getStatus, checkUpdate, applyUpdate, safeCommitUrl } from './update.js';
+
+// 他のサイトの iframe に埋め込まれていたら動かない(クリックジャッキング対策)
+if (window.top !== window.self) {
+  document.documentElement.replaceChildren();
+  throw new Error('kizupass は埋め込みでは動作しません');
+}
 
 const AUTO_LOCK_MS = 5 * 60 * 1000; // 操作がないとロック
 const HIDDEN_LOCK_MS = 60 * 1000; // バックグラウンドに回ってからロックするまで
@@ -16,12 +23,13 @@ const LAST_EXPORT_KEY = 'kizupass:lastExport';
 const $ = (id) => document.getElementById(id);
 
 // ロック解除中だけメモリに置く。鍵はエクスポート不可の CryptoKey
-let session = null; // { keyInfo, vault }
+let session = null; // { keyInfo, vault, lastData: 最後に読み書きした暗号文 }
 let editingId = null;
 let lockTimer = null;
 let hiddenAt = null;
 let clipboardTimer = null;
 let generatorTarget = null;
+let failedUnlocks = 0;
 
 // ---------- 画面 ----------
 
@@ -38,6 +46,7 @@ function toast(msg, ms = 2500) {
 }
 
 async function busy(fn) {
+  if (!$('busy').hidden) throw new Error('処理中です');
   $('busy').hidden = false;
   // 表示を反映させてから重い処理(鍵導出)を始める
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -114,16 +123,49 @@ async function readEnvelopeFile(file) {
 // ---------- セッション ----------
 
 async function persist() {
-  await saveEnvelope(await seal(session.vault, session.keyInfo));
+  const s = session;
+  const stored = await loadEnvelope();
+  if (s.lastData && stored?.data !== s.lastData) {
+    // 別のタブ・ウィンドウで変更されていたら、上書きせずに取り込んでから保存する
+    if (!stored) {
+      lock();
+      throw new Error('別の画面でデータが削除されました');
+    }
+    let other;
+    try {
+      other = validateVault(await openWithKey(stored, s.keyInfo));
+    } catch {
+      lock();
+      throw new Error('別の画面でマスターパスワードが変更されました。もう一度ロック解除してください');
+    }
+    s.vault = mergeVaults(other, s.vault).vault;
+  }
+  const env = await seal(s.vault, s.keyInfo);
+  await saveEnvelope(env);
+  s.lastData = env.data;
 }
 
-function startSession(keyInfo, vault) {
-  session = { keyInfo, vault: validateVault(vault) };
+/** 保存して、失敗したら知らせる。成功なら true */
+async function save(okMessage) {
+  try {
+    await persist();
+  } catch (err) {
+    toast(err.message || '保存に失敗しました');
+    return false;
+  }
+  if (session) renderList();
+  if (okMessage) toast(okMessage);
+  return true;
+}
+
+function enterMain() {
   show('main');
   $('search').value = '';
+  $('update-banner').hidden = true;
   renderList();
   resetLockTimer();
   requestPersist().catch(() => {});
+  refreshUpdate({ silent: true });
 }
 
 function lock() {
@@ -164,15 +206,19 @@ $('setup-form').addEventListener('submit', async (e) => {
   const pw = $('setup-pw').value;
   if (pw.length < MIN_MASTER_LENGTH) return toast(`${MIN_MASTER_LENGTH}文字以上にしてください`);
   if (pw !== $('setup-pw2').value) return toast('2回の入力が一致しません');
-  await busy(async () => {
-    const keyInfo = await createKey(pw);
-    session = { keyInfo, vault: createVault() };
-    await persist();
-  });
+  try {
+    await busy(async () => {
+      session = { keyInfo: await createKey(pw), vault: createVault(), lastData: null };
+      await persist();
+    });
+  } catch (err) {
+    session = null;
+    return toast(err.message);
+  }
   $('setup-pw').value = '';
   $('setup-pw2').value = '';
-  startSession(session.keyInfo, session.vault);
-  toast('保管庫を作成しました');
+  enterMain();
+  return toast('保管庫を作成しました');
 });
 
 $('setup-restore').addEventListener('click', async () => {
@@ -185,13 +231,18 @@ $('setup-restore').addEventListener('click', async () => {
       message: 'このファイルを書き出したときのマスターパスワードを入力してください。この端末でも同じパスワードを使います。',
     });
     if (pw === null) return;
-    const { vault, keyInfo } = await busy(() => openWithPassword(env, pw));
-    session = { keyInfo, vault: validateVault(vault) };
-    await persist();
-    startSession(keyInfo, session.vault);
+    await busy(async () => {
+      const { vault, keyInfo } = await openWithPassword(env, pw);
+      session = { keyInfo, vault: validateVault(vault), lastData: null };
+      // 旧方式のファイルなら、この端末では新しい方式の鍵で保存する
+      if (needsUpgrade(keyInfo)) session.keyInfo = await createKey(pw);
+      await persist();
+    });
+    enterMain();
     toast(`${liveEntries(session.vault).length}件を復元しました`);
   } catch (err) {
-    toast(err.message);
+    session = null;
+    toast(err instanceof WrongPasswordError ? 'パスワードが違います' : err.message);
   }
 });
 
@@ -199,14 +250,34 @@ $('unlock-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const pw = $('unlock-pw').value;
   try {
-    const env = await loadEnvelope();
-    const { vault, keyInfo } = await busy(() => openWithPassword(env, pw));
+    await busy(async () => {
+      const env = await loadEnvelope();
+      const { vault, keyInfo } = await openWithPassword(env, pw);
+      session = { keyInfo, vault: validateVault(vault), lastData: env.data };
+      if (needsUpgrade(keyInfo)) {
+        // 旧方式(PBKDF2)から Argon2id へ自動で移行する
+        session.keyInfo = await createKey(pw);
+        await persist();
+      }
+    });
+    failedUnlocks = 0;
     $('unlock-pw').value = '';
-    startSession(keyInfo, vault);
+    enterMain();
   } catch (err) {
+    session = null;
     $('unlock-pw').select();
-    toast(err instanceof WrongPasswordError ? 'パスワードが違います' : err.message);
+    if (!(err instanceof WrongPasswordError)) return toast(err.message);
+    // 続けて間違えたら少し待たせる
+    failedUnlocks++;
+    const wait = failedUnlocks >= 3 ? Math.min(5 * (failedUnlocks - 2), 60) : 0;
+    toast(wait ? `パスワードが違います（${wait}秒お待ちください）` : 'パスワードが違います', wait ? wait * 1000 : 2500);
+    if (wait) {
+      const btn = $('unlock-form').querySelector('button');
+      btn.disabled = true;
+      setTimeout(() => { btn.disabled = false; }, wait * 1000);
+    }
   }
+  return undefined;
 });
 
 // ---------- 一覧 ----------
@@ -292,15 +363,11 @@ form.addEventListener('submit', async (e) => {
   for (const name of ['title', 'username', 'password', 'url', 'notes']) fields[name] = form.elements[name].value;
   const before = session.vault;
   session.vault = upsertEntry(session.vault, fields).vault;
-  try {
-    await persist();
-  } catch {
-    session.vault = before;
-    return toast('保存に失敗しました');
+  if (!(await save('保存しました'))) {
+    if (session) session.vault = before;
+    return;
   }
   closeEntry();
-  renderList();
-  return toast('保存しました');
 });
 
 $('entry-cancel').addEventListener('click', closeEntry);
@@ -309,10 +376,7 @@ $('dlg-entry').addEventListener('close', () => { form.reset(); });
 $('entry-delete').addEventListener('click', async () => {
   if (!editingId || !window.confirm('このエントリを削除しますか？')) return;
   session.vault = deleteEntry(session.vault, editingId);
-  await persist();
-  closeEntry();
-  renderList();
-  toast('削除しました');
+  if (await save('削除しました')) closeEntry();
 });
 
 $('entry-toggle').addEventListener('click', () => {
@@ -397,6 +461,7 @@ function lastExportText() {
 
 $('btn-settings').addEventListener('click', async () => {
   $('last-export').textContent = lastExportText();
+  showVersion();
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
   $('persist-status').textContent = persisted
     ? 'この端末の保存領域は自動削除されない設定です。'
@@ -455,16 +520,14 @@ $('btn-import').addEventListener('click', async () => {
     renderList();
     toast(`マージしました（追加 ${result.added}件・更新 ${result.updated}件）`, 4000);
   } catch (err) {
+    if (err.message === '処理中です') return;
     toast(err instanceof WrongPasswordError ? 'パスワードが違います' : err.message);
   }
 });
 
-/** 現在の鍵とソルトが同じなら、パスワード再入力なしで開く */
+/** 現在の鍵と同じ設定(ソルト含む)で暗号化されていれば、パスワード再入力なしで開く */
 async function openWithSameKey(env) {
-  const { salt, iterations } = session.keyInfo;
-  const same = env.kdf?.salt && env.kdf.iterations === iterations
-    && env.kdf.salt === toB64(salt);
-  return same ? openWithKey(env, session.keyInfo) : null;
+  return sameKdf(env?.kdf, session.keyInfo.kdf) ? openWithKey(env, session.keyInfo) : null;
 }
 
 $('btn-change-pw').addEventListener('click', async () => {
@@ -481,10 +544,16 @@ $('btn-change-pw').addEventListener('click', async () => {
     confirm: true,
   });
   if (next === null) return undefined;
-  await busy(async () => {
-    session.keyInfo = await createKey(next);
-    await persist();
-  });
+  const before = session.keyInfo;
+  try {
+    await busy(async () => {
+      session.keyInfo = await createKey(next);
+      await persist();
+    });
+  } catch (err) {
+    if (session) session.keyInfo = before;
+    return toast(err.message);
+  }
   return toast('マスターパスワードを変更しました');
 });
 
@@ -493,9 +562,64 @@ $('btn-wipe').addEventListener('click', async () => {
   if (window.prompt('確認のため「削除」と入力してください') !== '削除') return;
   await clearAll();
   session = null;
+  clearTimeout(lockTimer);
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   show('setup');
   toast('削除しました');
+});
+
+// ---------- アプリの更新(利用者が承認したときだけ) ----------
+
+async function showVersion() {
+  $('app-version').textContent = '確認中…';
+  try {
+    const st = await getStatus();
+    const p = st?.pinned;
+    $('app-version').textContent = p
+      ? `使用中: ${p.version}${p.date ? `（${p.date}）` : ''}`
+      : 'オフライン用のデータがまだ準備されていません。一度アプリを開き直してください。';
+  } catch {
+    $('app-version').textContent = '確認できませんでした';
+  }
+}
+
+function showUpdateBanner(staged) {
+  $('update-info').textContent = `${staged.version}${staged.date ? `（${staged.date}）` : ''}: ${staged.message}`;
+  const link = safeCommitUrl(staged.commitUrl);
+  $('update-link').hidden = !link;
+  if (link) $('update-link').href = link;
+  $('update-banner').hidden = false;
+}
+
+async function refreshUpdate({ silent }) {
+  try {
+    const r = await checkUpdate();
+    if (!r) {
+      if (!silent) toast('いまは更新を確認できません。アプリを開き直してください');
+    } else if (r.available) {
+      showUpdateBanner(r.staged);
+      if (!silent) {
+        $('dlg-settings').close();
+        toast('新しいバージョンがあります');
+      }
+    } else if (!silent) {
+      toast('最新のバージョンです');
+    }
+  } catch (err) {
+    if (!silent) toast(err.message);
+  }
+}
+
+$('btn-check-update').addEventListener('click', () => refreshUpdate({ silent: false }));
+$('update-later').addEventListener('click', () => { $('update-banner').hidden = true; });
+$('update-apply').addEventListener('click', async () => {
+  if (!window.confirm('新しいバージョンに更新して再読み込みします。よろしいですか？')) return;
+  try {
+    await applyUpdate();
+    window.location.reload();
+  } catch (err) {
+    toast(err.message);
+  }
 });
 
 // ---------- 起動 ----------

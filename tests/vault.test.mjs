@@ -65,6 +65,12 @@ test('検索', () => {
 test('不正なデータは拒否', () => {
   assert.throws(() => validateVault({}));
   assert.throws(() => validateVault({ entries: [{ title: 'no id' }] }));
+  const ok = { id: 'a', updatedAt: 1, title: 't', username: '', password: '', url: '', notes: '' };
+  assert.doesNotThrow(() => validateVault({ entries: [ok], updatedAt: 1 }));
+  assert.throws(() => validateVault({ entries: [{ ...ok, title: 123 }] }), undefined, '文字列以外の項目');
+  assert.throws(() => validateVault({ entries: [ok, { ...ok }] }), undefined, 'id の重複');
+  assert.throws(() => validateVault({ entries: [{ ...ok, updatedAt: Infinity }] }));
+  assert.doesNotThrow(() => validateVault({ entries: [{ id: 'b', updatedAt: 2, deleted: true }] }), '墓標は中身なしでよい');
 });
 
 test('生成したパスワードは長さと文字種の条件を満たす', () => {

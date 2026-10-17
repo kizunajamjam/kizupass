@@ -1,15 +1,22 @@
-// 暗号化まわり。Web Crypto API のみを使い、外部ライブラリには依存しない。
-// 方式: PBKDF2-SHA256 (600,000回) で鍵を導出 → AES-256-GCM で保管庫全体を暗号化。
+// 暗号化まわり。鍵の導出は Argon2id (同梱の hash-wasm)、暗号化は Web Crypto API の AES-256-GCM。
+// 旧形式 (v1: PBKDF2) のファイルも読めるが、保存は常に v2 で行う。
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 export const FORMAT = 'kizupass';
-export const VERSION = 1;
-export const KDF_ITERATIONS = 600_000;
-// 細工されたファイルで弱い設定や極端に重い設定を読み込まないための範囲
-const MIN_ITERATIONS = 100_000;
-const MAX_ITERATIONS = 10_000_000;
+export const VERSION = 2;
+// OWASP 推奨の最低値 (19MiB, 2回) より強めの設定。iPhone でも1秒前後で終わる
+export const ARGON2 = { memory: 65536, iterations: 3, parallelism: 1 }; // memory は KiB
+
+// 細工されたファイルで弱すぎる設定や重すぎる設定を読み込まないための範囲
+const LIMITS = {
+  pbkdf2Iterations: [100_000, 10_000_000],
+  argonMemory: [19_456, 1_048_576],
+  argonIterations: [1, 10],
+  argonParallelism: [1, 4],
+};
+const inRange = (v, [min, max]) => Number.isInteger(v) && v >= min && v <= max;
 
 export class WrongPasswordError extends Error {
   constructor() {
@@ -45,44 +52,98 @@ export function randomBytes(n) {
   return crypto.getRandomValues(new Uint8Array(n));
 }
 
-export async function deriveKey(password, salt, iterations = KDF_ITERATIONS) {
-  const base = await crypto.subtle.importKey(
-    'raw', enc.encode(password.normalize('NFC')), 'PBKDF2', false, ['deriveKey'],
-  );
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
-    base,
-    { name: 'AES-GCM', length: 256 },
-    false, // 鍵はエクスポート不可
-    ['encrypt', 'decrypt'],
-  );
+function argon2id() {
+  const fn = globalThis.hashwasm?.argon2id;
+  if (!fn) throw new Error('暗号ライブラリ (Argon2) を読み込めませんでした');
+  return fn;
 }
 
-// ヘッダー(KDF設定)を追加認証データにして、設定の改ざんも検出する
-function aad(iterations, saltB64) {
-  return enc.encode(`${FORMAT}:v${VERSION}:${iterations}:${saltB64}`);
+function checkKdf(kdf) {
+  if (!kdf || typeof kdf.salt !== 'string') return false;
+  let salt;
+  try { salt = fromB64(kdf.salt); } catch { return false; }
+  if (salt.length < 16) return false;
+  if (kdf.name === 'Argon2id') {
+    return inRange(kdf.memory, LIMITS.argonMemory)
+      && inRange(kdf.iterations, LIMITS.argonIterations)
+      && inRange(kdf.parallelism, LIMITS.argonParallelism);
+  }
+  if (kdf.name === 'PBKDF2') {
+    return kdf.hash === 'SHA-256' && inRange(kdf.iterations, LIMITS.pbkdf2Iterations);
+  }
+  return false;
 }
 
-/** 新しい鍵を作る(初回設定・マスターパスワード変更時) */
+// 鍵導出の設定を決まった順序の文字列にする(追加認証データと同一判定に使う)
+function canonicalKdf(kdf) {
+  return kdf.name === 'Argon2id'
+    ? `Argon2id:${kdf.memory}:${kdf.iterations}:${kdf.parallelism}:${kdf.salt}`
+    : `PBKDF2:${kdf.hash}:${kdf.iterations}:${kdf.salt}`;
+}
+
+// ヘッダー(鍵導出の設定)を追加認証データにして、設定の改ざんも検出する
+function aad(version, kdf) {
+  return enc.encode(version === 1
+    ? `${FORMAT}:v1:${kdf.iterations}:${kdf.salt}`
+    : `${FORMAT}:v${version}:${canonicalKdf(kdf)}`);
+}
+
+export function sameKdf(a, b) {
+  return !!a && !!b && canonicalKdf(a) === canonicalKdf(b);
+}
+
+export async function deriveKey(password, kdf) {
+  const pw = enc.encode(password.normalize('NFC'));
+  const salt = fromB64(kdf.salt);
+  try {
+    if (kdf.name === 'Argon2id') {
+      const raw = await argon2id()({
+        password: pw,
+        salt,
+        iterations: kdf.iterations,
+        parallelism: kdf.parallelism,
+        memorySize: kdf.memory,
+        hashLength: 32,
+        outputType: 'binary',
+      });
+      try {
+        // エクスポート不可の鍵として取り込み、元のバイト列は消す
+        return await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+      } finally {
+        raw.fill(0);
+      }
+    }
+    const base = await crypto.subtle.importKey('raw', pw, 'PBKDF2', false, ['deriveKey']);
+    return await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: kdf.iterations },
+      base,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt'],
+    );
+  } finally {
+    pw.fill(0);
+  }
+}
+
+/** 新しい鍵を作る(初回設定・マスターパスワード変更・旧形式からの移行時) */
 export async function createKey(password) {
-  const salt = randomBytes(16);
-  const key = await deriveKey(password, salt, KDF_ITERATIONS);
-  return { key, salt, iterations: KDF_ITERATIONS };
+  const kdf = { name: 'Argon2id', ...ARGON2, salt: toB64(randomBytes(16)) };
+  return { key: await deriveKey(password, kdf), kdf };
 }
 
 /** 保管庫を暗号化して保存用の封筒(JSONにできるオブジェクト)にする。IVは毎回新しく作る */
-export async function seal(vault, { key, salt, iterations }) {
+export async function seal(vault, { key, kdf }) {
   const iv = randomBytes(12);
-  const saltB64 = toB64(salt);
   const ct = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv, additionalData: aad(iterations, saltB64) },
+    { name: 'AES-GCM', iv, additionalData: aad(VERSION, kdf) },
     key,
     enc.encode(JSON.stringify(vault)),
   );
   return {
     format: FORMAT,
     version: VERSION,
-    kdf: { name: 'PBKDF2', hash: 'SHA-256', iterations, salt: saltB64 },
+    kdf: { ...kdf },
     cipher: { name: 'AES-GCM', iv: toB64(iv) },
     data: toB64(new Uint8Array(ct)),
   };
@@ -90,21 +151,14 @@ export async function seal(vault, { key, salt, iterations }) {
 
 function checkEnvelope(env) {
   if (!env || typeof env !== 'object' || env.format !== FORMAT) throw new InvalidFileError();
-  if (env.version !== VERSION) throw new InvalidFileError('このバージョンのファイルには対応していません');
-  const { kdf, cipher } = env;
-  if (!kdf || kdf.name !== 'PBKDF2' || kdf.hash !== 'SHA-256' || typeof kdf.salt !== 'string'
-      || !Number.isInteger(kdf.iterations)
-      || kdf.iterations < MIN_ITERATIONS || kdf.iterations > MAX_ITERATIONS
-      || !cipher || cipher.name !== 'AES-GCM' || typeof cipher.iv !== 'string'
+  if (env.version !== 1 && env.version !== 2) {
+    throw new InvalidFileError('このバージョンのファイルには対応していません');
+  }
+  if (!checkKdf(env.kdf) || (env.version === 1 && env.kdf.name !== 'PBKDF2')
+      || !env.cipher || env.cipher.name !== 'AES-GCM' || typeof env.cipher.iv !== 'string'
       || typeof env.data !== 'string') {
     throw new InvalidFileError();
   }
-}
-
-/** 封筒の鍵情報(ソルト・反復回数)を取り出す */
-export function envelopeParams(env) {
-  checkEnvelope(env);
-  return { salt: fromB64(env.kdf.salt), iterations: env.kdf.iterations };
 }
 
 /** 既に導出済みの鍵で開く */
@@ -113,7 +167,7 @@ export async function openWithKey(env, keyInfo) {
   let pt;
   try {
     pt = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: fromB64(env.cipher.iv), additionalData: aad(env.kdf.iterations, env.kdf.salt) },
+      { name: 'AES-GCM', iv: fromB64(env.cipher.iv), additionalData: aad(env.version, env.kdf) },
       keyInfo.key,
       fromB64(env.data),
     );
@@ -125,9 +179,16 @@ export async function openWithKey(env, keyInfo) {
 
 /** パスワードで開く。成功すると保管庫と鍵情報を返す */
 export async function openWithPassword(env, password) {
-  const { salt, iterations } = envelopeParams(env);
-  const key = await deriveKey(password, salt, iterations);
-  const keyInfo = { key, salt, iterations };
+  checkEnvelope(env);
+  const kdf = { ...env.kdf };
+  const keyInfo = { key: await deriveKey(password, kdf), kdf };
   const vault = await openWithKey(env, keyInfo);
   return { vault, keyInfo };
+}
+
+/** 旧方式(PBKDF2)の鍵なら Argon2id へ移行すべきか */
+export function needsUpgrade(keyInfo) {
+  return keyInfo.kdf.name !== 'Argon2id'
+    || keyInfo.kdf.memory < ARGON2.memory
+    || keyInfo.kdf.iterations < ARGON2.iterations;
 }

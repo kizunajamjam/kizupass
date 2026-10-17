@@ -26,9 +26,12 @@ jobs:
       - run: npm test
       # 公開に必要なファイルだけを載せる(テストや README は含めない)
       - name: Assemble site
+        env:
+          TZ: Asia/Tokyo
         run: |
           mkdir _site
           cp -r index.html sw.js manifest.webmanifest css js icons _site/
+          node scripts/stamp-version.mjs _site/version.json
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

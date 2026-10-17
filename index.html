@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+        content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#1f2a44">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,6 +15,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/vendor/argon2.umd.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
@@ -60,6 +61,16 @@
       <button id="btn-settings" type="button" class="icon" aria-label="設定・同期">⚙︎</button>
       <button id="btn-lock" type="button" class="icon" aria-label="ロック">🔒</button>
     </header>
+    <div id="update-banner" class="banner" hidden>
+      <p><strong>新しいバージョンがあります</strong><br><span id="update-info" class="small"></span></p>
+      <p class="small">自分で変更した覚えがない更新なら、適用せずに GitHub アカウントを確認してください。</p>
+      <div class="actions">
+        <a id="update-link" class="button" target="_blank" rel="noopener noreferrer" hidden>変更内容を見る</a>
+        <span class="spacer"></span>
+        <button type="button" id="update-later">あとで</button>
+        <button type="button" id="update-apply" class="primary">更新する</button>
+      </div>
+    </div>
     <ul id="entry-list" class="list"></ul>
     <p id="empty" class="muted center-text" hidden>まだ何も登録されていません。<br>右下の ＋ から追加できます。</p>
     <button id="btn-add" type="button" class="fab" aria-label="追加">＋</button>
@@ -139,6 +150,9 @@
       <h2>セキュリティ</h2>
       <button type="button" id="btn-change-pw" class="block">マスターパスワードを変更</button>
       <p id="persist-status" class="muted small"></p>
+      <h2>アプリのバージョン</h2>
+      <p id="app-version" class="muted small"></p>
+      <button type="button" id="btn-check-update" class="block">更新を確認</button>
       <h2>危険な操作</h2>
       <button type="button" id="btn-wipe" class="danger block">この端末のデータをすべて削除</button>
       <div class="actions">
