@@ -1,0 +1,11 @@
+{
+  "name": "kizupass",
+  "version": "1.0.0",
+  "private": true,
+  "description": "端末内で暗号化するパスワード管理PWA",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\"",
+    "start": "python3 -m http.server 8080"
+  }
+}
