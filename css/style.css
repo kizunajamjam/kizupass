@@ -147,3 +147,14 @@ dialog::backdrop { background: rgb(0 0 0 / 45%); }
   max-width: calc(100% - 32px); bottom: calc(90px + env(safe-area-inset-bottom));
 }
 #entry-issues { white-space: pre-line; }
+
+/* 使い方 */
+.help details { border-top: 1px solid var(--line); padding: 4px 0; }
+.help details:last-of-type { border-bottom: 1px solid var(--line); }
+.help summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
+.help h3 { font-size: .95rem; margin: 12px 0 4px; }
+.help ol, .help ul { padding-left: 1.4em; margin: 6px 0; }
+.help li { margin: 4px 0; }
+.help dt { font-weight: 600; margin-top: 8px; }
+.help dd { margin: 2px 0 0 1em; color: var(--muted); }
+.help-open.link { display: block; margin: 12px auto 0; }

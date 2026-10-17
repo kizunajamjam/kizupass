@@ -622,6 +622,12 @@ $('btn-import').addEventListener('click', async () => {
   }
 });
 
+// ---------- 使い方 ----------
+
+for (const btn of document.querySelectorAll('.help-open')) {
+  btn.addEventListener('click', () => $('dlg-help').showModal());
+}
+
 // ---------- 他のパスワード管理へ移す(暗号化されない CSV) ----------
 
 const CSV_TARGETS = {

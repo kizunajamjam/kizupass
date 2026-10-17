@@ -38,6 +38,7 @@
       <div class="divider">または</div>
       <button id="setup-restore" type="button">バックアップファイルから始める</button>
       <p class="muted small">他の端末で書き出した .kizupass ファイルを読み込みます。</p>
+      <button type="button" class="link help-open">使い方を見る</button>
     </div>
   </section>
 
@@ -58,6 +59,7 @@
   <section id="view-main" class="view" hidden>
     <header class="topbar">
       <input id="search" type="search" placeholder="検索" autocomplete="off">
+      <button type="button" class="icon help-open" aria-label="使い方">？</button>
       <button id="btn-settings" type="button" class="icon" aria-label="設定・同期">⚙︎</button>
       <button id="btn-lock" type="button" class="icon" aria-label="ロック">🔒</button>
     </header>
@@ -188,6 +190,148 @@
       <div class="actions">
         <span class="spacer"></span>
         <button type="button" id="settings-close">閉じる</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 使い方 -->
+  <dialog id="dlg-help" class="help">
+    <form method="dialog">
+      <h2>kizupass の使い方</h2>
+      <p class="muted small">見たい項目をタップすると開きます。</p>
+
+      <details>
+        <summary>1. はじめて使う</summary>
+        <h3>iPhone</h3>
+        <ol>
+          <li>Safari で <b>kizunajamjam.github.io/kizupass</b> を開く。</li>
+          <li>下の共有ボタン（□に↑）→「ホーム画面に追加」。</li>
+          <li>以後はホーム画面のアイコンから開く。<b>Safari のまま使うと、しばらく使わないとデータが消えることがあります。</b></li>
+        </ol>
+        <h3>Windows / Mac</h3>
+        <ol>
+          <li>ウェブ版の ⚙︎ →「PC用のファイル版をダウンロード」。</li>
+          <li>ダウンロードした <b>kizupass-offline.html</b> を好きな場所に置き、Chrome か Edge で開く（ブックマークしておくと便利）。</li>
+        </ol>
+        <h3>マスターパスワードを決める</h3>
+        <ul>
+          <li>12文字以上。おすすめは<b>関係のない単語を4〜5個つなげたもの</b>（例：みかん-電車-青空-えんぴつ）。</li>
+          <li>他のサイトで使っていないものにする。</li>
+          <li><b>忘れると誰にも復元できません。</b>紙に書いて家の安全な場所に保管するのがおすすめです。</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>2. 2台目以降の端末で使う</summary>
+        <ol>
+          <li>1台目で ⚙︎ →「暗号化ファイルを書き出す」→ iCloud Drive に保存。</li>
+          <li>2台目で kizupass を開き、最初の画面で「バックアップファイルから始める」。</li>
+          <li>保存したファイルを選び、1台目と同じマスターパスワードを入力。</li>
+        </ol>
+      </details>
+
+      <details>
+        <summary>3. ログインするとき</summary>
+        <ol>
+          <li>kizupass を開いてロック解除。</li>
+          <li>上の検索欄にサービス名を入れる。</li>
+          <li>項目を開き、ユーザー名の「コピー」→ ログイン画面に貼り付け。</li>
+          <li>パスワードの「コピー」→ 貼り付け（一覧の「コピー」ボタンならパスワードを直接コピー）。</li>
+        </ol>
+        <ul>
+          <li>URL を登録しておくと「開く」でそのサイトに飛べます。</li>
+          <li><b>貼り付ける前に、アドレスバーの URL が本物か確認してください。</b></li>
+          <li>コピーしたパスワードは30秒後に消えます。他のアプリに切り替えても、1分以内に戻ればロックされません。</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>4. 新しく登録するとき</summary>
+        <ol>
+          <li>右下の ＋ → サービス名・ユーザー名・URL を入力。</li>
+          <li>新しいサービスなら「パスワードを生成…」→「使う」。今使っているパスワードがあるならそれを入力。</li>
+          <li>「保存」。新しいサービスは、保存してからサイトの登録画面に貼り付けると、途中で失敗してもパスワードが残ります。</li>
+        </ol>
+      </details>
+
+      <details>
+        <summary>5. パスワードを変えていく</summary>
+        <p>使い回しや弱いパスワードは、<b>サイトごとに1つずつ</b>変える必要があります。</p>
+        <ol>
+          <li>上の「要注意」を押すと、使い回し・弱いパスワードの項目だけが出ます。</li>
+          <li>サイトにログインして、パスワード変更の画面を開く。</li>
+          <li>kizupass でその項目を開き「パスワードを生成…」→「使う」（自動で「変更済み」にチェックが入ります）。</li>
+          <li>パスワードを「コピー」してサイトの変更画面に貼り付け、変更を完了する。</li>
+          <li>kizupass で「保存」。</li>
+        </ol>
+        <ul>
+          <li>前のパスワードは残るので、サイト側で失敗しても戻せます。新しいパスワードでログインできたら「消す」で消して大丈夫です。</li>
+          <li>優先して変えたいもの：メインのメール → Apple ID・Google → 銀行・カード・ショッピング → SNS。</li>
+          <li>上のバーで「〇件中〇件 変更済み」と進み具合がわかります。</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>6. 端末間で同期・バックアップ</summary>
+        <p>kizupass は自動では同期しません。登録や変更をしたら、次の手順で他の端末に反映してください。これがバックアップにもなります。</p>
+        <ol>
+          <li>変更した端末で ⚙︎ →「暗号化ファイルを書き出す」→ iCloud Drive に保存（iPhone は共有シートの「"ファイル"に保存」）。</li>
+          <li>他の端末で ⚙︎ →「ファイルを読み込んでマージ」→ そのファイルを選ぶ。</li>
+        </ol>
+        <ul>
+          <li>同じ項目は更新日時が新しい方が残り、削除した項目も反映されます。</li>
+          <li>ファイルは暗号化されているので、iCloud に置いても中身は読めません。</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>7. Apple「パスワード」/ Chrome へ移す</summary>
+        <ol>
+          <li>⚙︎ →「他のパスワード管理へ移す」→ 移したい先を選ぶ。</li>
+          <li>マスターパスワードを入力して CSV を保存。</li>
+          <li>表示される手順で読み込む。</li>
+          <li><b>読み込んだら CSV をすぐ削除</b>（ゴミ箱からも）。暗号化されていないため、iCloud Drive やメールには置かないでください。</li>
+        </ol>
+        <p class="small">URL が登録されていない項目は移せません（一覧で表示されます）。</p>
+      </details>
+
+      <details>
+        <summary>8. アプリの更新</summary>
+        <ul>
+          <li>ウェブ版：新しいバージョンがあると「新しいバージョンがあります」と出ます。「変更内容を見る」で内容を確認してから「更新する」。<b>心当たりのない更新は押さないでください。</b></li>
+          <li>ファイル版：自動では更新されません。新しい機能を使いたいときは、ウェブ版の ⚙︎ からもう一度ダウンロードしてください。</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>9. 困ったとき</summary>
+        <dl>
+          <dt>マスターパスワードを忘れた</dt>
+          <dd>復元する方法はありません。各サイトの「パスワードを忘れた」から再設定し、kizupass を作り直してください。</dd>
+          <dt>パスワードを間違えて待たされる</dt>
+          <dd>3回続けて間違えると少し待つ必要があります。時間がたてばまた入力できます。</dd>
+          <dt>データが消えた</dt>
+          <dd>書き出したファイルがあれば「バックアップファイルから始める」で戻せます。</dd>
+          <dt>勝手にロックされる</dt>
+          <dd>安全のため、5分操作しないか、他のアプリに1分以上切り替えるとロックされます。</dd>
+          <dt>ファイル版の保存がうまくいかない</dt>
+          <dd>Safari ではなく Chrome か Edge で開いてください。</dd>
+        </dl>
+      </details>
+
+      <details>
+        <summary>10. 安全に使うために</summary>
+        <ul>
+          <li>GitHub アカウントに2段階認証を設定する（ウェブ版の配信元を守るため）。</li>
+          <li>各サービス側でも2段階認証を有効にする。</li>
+          <li>定期的に書き出してバックアップする。</li>
+          <li>kizupass は第三者の監査を受けていません。銀行など特に大事なものは、Apple の「パスワード」などとの併用がおすすめです。</li>
+        </ul>
+      </details>
+
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="submit" class="primary">閉じる</button>
       </div>
     </form>
   </dialog>
