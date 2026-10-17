@@ -19,6 +19,8 @@ const HIDDEN_LOCK_MS = 60 * 1000; // バックグラウンドに回ってから�
 const CLIPBOARD_CLEAR_MS = 30 * 1000;
 const MIN_MASTER_LENGTH = 12;
 const LAST_EXPORT_KEY = 'kizupass:lastExport';
+// ファイル版としてビルドされたときだけ設定される({ standalone, version, date })
+const BUILD = globalThis.KIZUPASS_BUILD || null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -463,9 +465,11 @@ $('btn-settings').addEventListener('click', async () => {
   $('last-export').textContent = lastExportText();
   showVersion();
   const persisted = await navigator.storage?.persisted?.().catch(() => false);
-  $('persist-status').textContent = persisted
-    ? 'この端末の保存領域は自動削除されない設定です。'
-    : 'ブラウザが容量不足時などにデータを消す可能性があります。ホーム画面に追加して使い、定期的に書き出してください。';
+  $('persist-status').textContent = BUILD
+    ? 'ファイル版のデータはこのブラウザの中に保存されます。ブラウザの閲覧データを消すと消えるので、定期的に書き出してください。'
+    : persisted
+      ? 'この端末の保存領域は自動削除されない設定です。'
+      : 'ブラウザが容量不足時などにデータを消す可能性があります。ホーム画面に追加して使い、定期的に書き出してください。';
   $('dlg-settings').showModal();
 });
 $('settings-close').addEventListener('click', () => $('dlg-settings').close());
@@ -477,22 +481,37 @@ $('btn-export').addEventListener('click', async () => {
   const name = `kizupass-${stamp}.kizupass`;
   const file = new File([JSON.stringify(env)], name, { type: 'application/json' });
   try {
-    // iPhone では共有シートから「"ファイル"に保存」→ iCloud Drive を選べる
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file] });
-    } else {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(file);
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-    }
+    await saveFile(file);
     try { localStorage.setItem(LAST_EXPORT_KEY, String(Date.now())); } catch { /* 使えない環境 */ }
     $('last-export').textContent = lastExportText();
   } catch (err) {
     if (err.name !== 'AbortError') toast('書き出しに失敗しました');
   }
 });
+
+async function saveFile(file) {
+  // スマホ: 共有シート(iPhone は「"ファイル"に保存」で iCloud Drive を選べる)
+  if (window.matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file] });
+    return;
+  }
+  // PC の Chrome / Edge: 保存先(iCloud Drive のフォルダなど)を選べる
+  if (window.showSaveFilePicker) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: file.name,
+      types: [{ description: 'kizupass 保管庫', accept: { 'application/json': ['.kizupass'] } }],
+    });
+    const w = await handle.createWritable();
+    await w.write(file);
+    await w.close();
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
 
 $('btn-import').addEventListener('click', async () => {
   const file = await pickFile();
@@ -571,6 +590,10 @@ $('btn-wipe').addEventListener('click', async () => {
 // ---------- アプリの更新(利用者が承認したときだけ) ----------
 
 async function showVersion() {
+  if (BUILD) {
+    $('app-version').textContent = `ファイル版 ${BUILD.version}${BUILD.date ? `（${BUILD.date}）` : ''}。サーバーに接続しないため自動では更新されません。`;
+    return;
+  }
   $('app-version').textContent = '確認中…';
   try {
     const st = await getStatus();
@@ -592,6 +615,7 @@ function showUpdateBanner(staged) {
 }
 
 async function refreshUpdate({ silent }) {
+  if (BUILD) return;
   try {
     const r = await checkUpdate();
     if (!r) {
@@ -611,6 +635,16 @@ async function refreshUpdate({ silent }) {
 }
 
 $('btn-check-update').addEventListener('click', () => refreshUpdate({ silent: false }));
+$('btn-offline').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = 'kizupass-offline.html';
+  a.download = 'kizupass-offline.html';
+  a.click();
+});
+// ファイル版では更新確認とダウンロードは不要
+$('btn-check-update').hidden = !!BUILD;
+$('btn-offline').hidden = !!BUILD;
+$('offline-note').hidden = !!BUILD;
 $('update-later').addEventListener('click', () => { $('update-banner').hidden = true; });
 $('update-apply').addEventListener('click', async () => {
   if (!window.confirm('新しいバージョンに更新して再読み込みします。よろしいですか？')) return;
@@ -624,7 +658,7 @@ $('update-apply').addEventListener('click', async () => {
 
 // ---------- 起動 ----------
 
-if ('serviceWorker' in navigator) {
+if (!BUILD && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 

@@ -1,3 +1,4 @@
 node_modules/
 *.kizupass
 .DS_Store
+dist/

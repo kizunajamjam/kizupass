@@ -34,6 +34,23 @@ iPhone・Windows・Mac で使える、自分専用のパスワード管理アプ
 - **端末自体のマルウェア**やキーロガーは防げません（どの管理アプリでも同じ）。
 - **フィッシングサイトの判別**はできません（自動入力ではなくコピー＆貼り付けのため）。貼り付ける前に URL を確認してください。
 
+## Windows / Mac 用「ファイル版」（サーバーに一切つながらない）
+
+アプリ全体を HTML ファイル1つにまとめた版です。一度ダウンロードすれば、その後は GitHub やサーバーが乗っ取られても影響を受けません。
+
+1. ウェブ版の ⚙︎ →「PC用のファイル版をダウンロード」
+   （または https://kizunajamjam.github.io/kizupass/kizupass-offline.html を保存）
+2. 必要なら改ざんされていないか確認：同じ場所の `kizupass-offline.html.sha256` の値と比べる
+   - Windows: `certutil -hashfile kizupass-offline.html SHA256`
+   - Mac: `shasum -a 256 kizupass-offline.html`
+3. ファイルを好きな場所に置き、ダブルクリックで開く（**Chrome / Edge 推奨**）。ブックマークしておくと便利です。
+
+- CSP で**すべての通信を禁止**しています（`default-src 'none'`）。コードに不具合があっても外部へ送信できません。
+- データはそのブラウザの中に保存されます。同期・バックアップは、ウェブ版と同じ暗号化ファイルで行います（ファイル形式は共通）。
+- Chrome / Edge では書き出し時に保存先を選べるので、iCloud Drive のフォルダに直接保存できます。
+- 自動では更新されません。新しい版を使いたいときは、もう一度ダウンロードしてください。
+- iPhone ではファイル版は動かないため、ウェブ版（ホーム画面に追加）を使います。
+
 ## 端末間の同期（暗号化ファイル経由）
 
 サーバーを使わず、暗号化済みのファイルを iCloud Drive に置いて受け渡します。
@@ -71,8 +88,9 @@ HTTPS で配信する必要があります（Web Crypto と Service Worker の�
 ## 開発
 
 ```sh
-npm test        # 暗号化・マージ・生成のテスト（Node.js 20 以上）
+npm test        # 暗号化・マージ・生成・ファイル版ビルドのテスト（Node.js 20 以上）
 npm start       # http://localhost:8080 で起動
+npm run build:offline   # dist/kizupass-offline.html を作る
 ```
 
 配信するファイルを追加・削除したら、`version.json` の `assets` も更新してください（テストで存在を確認しています）。
