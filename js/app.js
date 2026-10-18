@@ -5,7 +5,9 @@ import {
   createVault, validateVault, upsertEntry, deleteEntry, liveEntries, mergeVaults, searchEntries,
   clearPreviousPassword, passwordIssues, filterEntries,
 } from './vault.js';
-import { generatePassword, estimateBits } from './generator.js';
+import {
+  generatePassword, estimateBits, PRESETS, normalizeOptions, presetOf,
+} from './generator.js';
 import { toCsv } from './csv.js';
 import { loadEnvelope, saveEnvelope, clearAll, requestPersist } from './store.js';
 import { getStatus, checkUpdate, applyUpdate, safeCommitUrl } from './update.js';
@@ -35,6 +37,8 @@ let clipboardTimer = null;
 let generatorTarget = null;
 let failedUnlocks = 0;
 let listFilter = 'all';
+let genState = { ...PRESETS.standard }; // 生成画面で選んでいる型
+let pendingGenOptions = null; // 編集中の項目で「使う」を押した型(保存時に覚える)
 
 // ---------- 画面 ----------
 
@@ -302,7 +306,7 @@ function renderList() {
     done: filterEntries(all, 'done', issues).length,
     risk: filterEntries(all, 'risk', issues).length,
   };
-  for (const chip of document.querySelectorAll('.chip')) {
+  for (const chip of document.querySelectorAll('.filters .chip')) {
     chip.querySelector('span').textContent = counts[chip.dataset.filter];
     chip.setAttribute('aria-selected', String(chip.dataset.filter === listFilter));
   }
@@ -344,7 +348,7 @@ function renderList() {
 }
 
 $('search').addEventListener('input', renderList);
-for (const chip of document.querySelectorAll('.chip')) {
+for (const chip of document.querySelectorAll('.filters .chip')) {
   chip.addEventListener('click', () => {
     listFilter = chip.dataset.filter;
     renderList();
@@ -384,6 +388,7 @@ function openEntry(id) {
   form.elements.password.type = 'password';
   $('entry-toggle').textContent = '表示';
   form.elements.changed.checked = !!entry?.changed;
+  pendingGenOptions = null;
   $('entry-changed-hint').hidden = true;
   showEntryExtras(entry);
   $('entry-delete').hidden = !entry;
@@ -434,6 +439,7 @@ function closeEntry() {
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const fields = { id: editingId, changed: form.elements.changed.checked };
+  if (pendingGenOptions) fields.genOptions = pendingGenOptions;
   for (const name of ['title', 'username', 'password', 'url', 'notes']) fields[name] = form.elements[name].value;
   const before = session.vault;
   session.vault = upsertEntry(session.vault, fields).vault;
@@ -478,24 +484,29 @@ $('entry-open').addEventListener('click', () => {
   }
 });
 
-$('entry-generate').addEventListener('click', () => openGenerator(form.elements.password));
+$('entry-generate').addEventListener('click', () => {
+  const entry = editingId && session.vault.entries.find((e) => e.id === editingId);
+  // このサイトで前に使った型から始める
+  openGenerator(form.elements.password, pendingGenOptions || entry?.genOptions);
+});
 
 // ---------- パスワード生成 ----------
 
-function genOptions() {
-  return {
-    length: Number($('gen-length').value),
-    lower: $('gen-lower').checked,
-    upper: $('gen-upper').checked,
-    digits: $('gen-digits').checked,
-    symbols: $('gen-symbols').checked,
-  };
+/** 選んでいる型を画面の部品に反映する */
+function syncGenControls() {
+  $('gen-length').value = genState.length;
+  $('gen-length-label').textContent = `${genState.length}文字`;
+  $('gen-lower').checked = genState.lower;
+  $('gen-upper').checked = genState.upper;
+  $('gen-digits').checked = genState.digits;
+  $('gen-symbols').value = genState.symbols;
+  const preset = presetOf(genState);
+  for (const b of document.querySelectorAll('.gen-preset')) b.setAttribute('aria-pressed', String(b.dataset.preset === preset));
 }
 
 function regenerate() {
-  $('gen-length-label').textContent = $('gen-length').value;
   try {
-    const pw = generatePassword(genOptions());
+    const pw = generatePassword(genState);
     $('gen-output').textContent = pw;
     strengthLabel($('gen-strength'), pw);
   } catch (err) {
@@ -504,14 +515,34 @@ function regenerate() {
   }
 }
 
-function openGenerator(target) {
+function openGenerator(target, options) {
   generatorTarget = target;
+  genState = normalizeOptions(options) || { ...PRESETS.standard };
+  $('dlg-generator').querySelector('.gen-detail').open = false;
+  syncGenControls();
   regenerate();
   $('dlg-generator').showModal();
 }
 
+for (const b of document.querySelectorAll('.gen-preset')) {
+  b.addEventListener('click', () => {
+    genState = { ...PRESETS[b.dataset.preset] };
+    syncGenControls();
+    regenerate();
+  });
+}
 for (const id of ['gen-length', 'gen-lower', 'gen-upper', 'gen-digits', 'gen-symbols']) {
-  $(id).addEventListener('input', regenerate);
+  $(id).addEventListener('input', () => {
+    genState = {
+      length: Number($('gen-length').value),
+      lower: $('gen-lower').checked,
+      upper: $('gen-upper').checked,
+      digits: $('gen-digits').checked,
+      symbols: $('gen-symbols').value,
+    };
+    syncGenControls();
+    regenerate();
+  });
 }
 $('gen-refresh').addEventListener('click', regenerate);
 $('gen-cancel').addEventListener('click', () => $('dlg-generator').close());
@@ -520,6 +551,7 @@ $('gen-use').addEventListener('click', () => {
   if (!pw || !generatorTarget) return;
   generatorTarget.value = pw;
   generatorTarget.type = 'text';
+  pendingGenOptions = { ...genState };
   $('entry-toggle').textContent = '隠す';
   // 生成したパスワードに変えたら「変更済み」にする(外すこともできる)
   form.elements.changed.checked = true;

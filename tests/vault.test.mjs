@@ -4,7 +4,9 @@ import {
   createVault, upsertEntry, deleteEntry, liveEntries, mergeVaults, searchEntries, validateVault,
   clearPreviousPassword, passwordIssues, filterEntries,
 } from '../js/vault.js';
-import { generatePassword, estimateBits, CHARSETS } from '../js/generator.js';
+import {
+  generatePassword, estimateBits, CHARSETS, PRESETS, SAFE_SYMBOLS, presetOf, normalizeOptions,
+} from '../js/generator.js';
 
 test('追加・更新・削除', () => {
   let v = createVault();
@@ -75,15 +77,43 @@ test('不正なデータは拒否', () => {
 });
 
 test('生成したパスワードは長さと文字種の条件を満たす', () => {
+  // おすすめ: 16文字・英数字、記号なし
   for (let i = 0; i < 200; i++) {
-    const pw = generatePassword({ length: 12 });
-    assert.equal(pw.length, 12);
-    for (const set of Object.values(CHARSETS)) assert.ok([...pw].some((c) => set.includes(c)));
+    const pw = generatePassword();
+    assert.match(pw, /^[A-Za-z0-9]{16}$/);
+    for (const set of [CHARSETS.lower, CHARSETS.upper, CHARSETS.digits]) assert.ok([...pw].some((c) => set.includes(c)));
   }
-  const digits = generatePassword({ length: 30, lower: false, upper: false, symbols: false });
-  assert.match(digits, /^[0-9]{30}$/);
-  assert.throws(() => generatePassword({ lower: false, upper: false, digits: false, symbols: false }));
-  assert.ok(estimateBits(generatePassword({ length: 20 })) > 120);
+  assert.ok(estimateBits(generatePassword()) >= 95);
+  // 記号あり: 多くのサイトで使える記号だけ
+  for (let i = 0; i < 200; i++) {
+    const pw = generatePassword(PRESETS.symbol);
+    assert.equal(pw.length, 16);
+    assert.ok([...pw].some((c) => SAFE_SYMBOLS.includes(c)));
+    assert.match(pw, /^[A-Za-z0-9\-_.!@#]+$/);
+  }
+  assert.match(generatePassword(PRESETS.short), /^[A-Za-z0-9]{12}$/);
+  assert.match(generatePassword(PRESETS.pin), /^[0-9]{6}$/);
+  const all = generatePassword({ length: 30, symbols: 'all' });
+  assert.ok([...all].some((c) => CHARSETS.symbols.includes(c)));
+  assert.throws(() => generatePassword({ lower: false, upper: false, digits: false, symbols: 'none' }));
+});
+
+test('生成の型の判定と、保存データの整形', () => {
+  assert.equal(presetOf(PRESETS.symbol), 'symbol');
+  assert.equal(presetOf({ ...PRESETS.standard, length: 20 }), null);
+  assert.deepEqual(normalizeOptions({ length: 999, lower: true, symbols: 'evil' }),
+    { length: 64, lower: true, upper: false, digits: false, symbols: 'none' });
+  assert.equal(normalizeOptions({ lower: false }), null);
+  assert.equal(normalizeOptions('x'), null);
+});
+
+test('サイトごとに使った生成の型を覚える', () => {
+  const r = upsertEntry(createVault(), { title: 'Bank', password: 'p', genOptions: PRESETS.symbol }, 1);
+  assert.deepEqual(r.entry.genOptions, PRESETS.symbol);
+  // 渡さなければ前の型を残す
+  const v = upsertEntry(r.vault, { id: r.entry.id, title: 'Bank2', password: 'p' }, 2).vault;
+  assert.deepEqual(v.entries[0].genOptions, PRESETS.symbol);
+  assert.throws(() => validateVault({ entries: [{ ...v.entries[0], genOptions: 'x' }] }));
 });
 
 test('パスワードを変えると前のパスワードが残り、変更済みの印は保存される', () => {

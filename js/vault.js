@@ -1,11 +1,13 @@
 // 保管庫のデータ操作(純粋関数)。UIや保存方法には依存しない。
 // 削除は「墓標」(deleted: true)として残し、端末間のマージで削除が復活しないようにする。
 
-import { estimateBits } from './generator.js';
+import { estimateBits, normalizeOptions } from './generator.js';
 
 export const FIELDS = ['title', 'username', 'password', 'url', 'notes'];
 // 後から追加した項目。古いデータにはないので、あれば型だけ確かめる
-const EXTRA_TYPES = { changed: 'boolean', previousPassword: 'string', passwordUpdatedAt: 'number' };
+const EXTRA_TYPES = {
+  changed: 'boolean', previousPassword: 'string', passwordUpdatedAt: 'number', genOptions: 'object',
+};
 // これより弱いパスワードは「弱い」と表示する
 export const WEAK_BITS = 60;
 
@@ -34,6 +36,9 @@ function clean(fields) {
   const out = {};
   for (const f of FIELDS) out[f] = typeof fields[f] === 'string' ? fields[f] : '';
   out.changed = fields.changed === true;
+  // このサイトで使った生成の型(次に作るときに使う)。渡されなければ今のものを残す
+  const gen = normalizeOptions(fields.genOptions);
+  if (gen) out.genOptions = gen;
   return out;
 }
 

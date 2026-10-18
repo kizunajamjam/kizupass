@@ -7,6 +7,32 @@ export const CHARSETS = {
   symbols: '!@#$%^&*()-_=+[]{};:,.?/~',
 };
 
+// 多くのサイトで使える記号だけ(「記号あり」用)
+export const SAFE_SYMBOLS = '-_.!@#';
+
+// 生成の型。おすすめ(英数字16文字)は記号や長さの制限があるサイトでもほぼ通り、約95ビットと十分強い
+export const PRESETS = {
+  standard: { length: 16, lower: true, upper: true, digits: true, symbols: 'none' },
+  symbol: { length: 16, lower: true, upper: true, digits: true, symbols: 'safe' },
+  short: { length: 12, lower: true, upper: true, digits: true, symbols: 'none' },
+  pin: { length: 6, lower: false, upper: false, digits: true, symbols: 'none' },
+};
+
+/** 保存されていた設定などを安全な形にそろえる。使えなければ null */
+export function normalizeOptions(o) {
+  if (!o || typeof o !== 'object') return null;
+  const length = Number.isInteger(o.length) ? Math.min(64, Math.max(4, o.length)) : 16;
+  const symbols = ['none', 'safe', 'all'].includes(o.symbols) ? o.symbols : 'none';
+  const out = { length, lower: o.lower === true, upper: o.upper === true, digits: o.digits === true, symbols };
+  return out.lower || out.upper || out.digits || symbols !== 'none' ? out : null;
+}
+
+/** 設定がどの型と同じか(どれでもなければ null) */
+export function presetOf(o) {
+  const n = normalizeOptions(o);
+  return n && (Object.keys(PRESETS).find((k) => Object.keys(n).every((f) => PRESETS[k][f] === n[f])) || null);
+}
+
 export function randomInt(max) {
   const limit = Math.floor(0x1_0000_0000 / max) * max;
   const buf = new Uint32Array(1);
@@ -16,10 +42,10 @@ export function randomInt(max) {
   }
 }
 
-export function generatePassword({ length = 20, lower = true, upper = true, digits = true, symbols = true } = {}) {
-  const sets = Object.entries({ lower, upper, digits, symbols })
-    .filter(([, on]) => on)
-    .map(([name]) => CHARSETS[name]);
+export function generatePassword(options = PRESETS.standard) {
+  const { length, lower, upper, digits, symbols } = { ...PRESETS.standard, ...options };
+  const symbolChars = symbols === 'safe' ? SAFE_SYMBOLS : symbols === 'all' ? CHARSETS.symbols : '';
+  const sets = [lower && CHARSETS.lower, upper && CHARSETS.upper, digits && CHARSETS.digits, symbolChars].filter(Boolean);
   if (sets.length === 0) throw new Error('文字の種類を1つ以上選んでください');
   if (length < sets.length) throw new Error('長さが短すぎます');
   const all = sets.join('');

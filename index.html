@@ -147,15 +147,31 @@
       <h2>パスワード生成</h2>
       <output id="gen-output" class="mono"></output>
       <div id="gen-strength" class="strength"></div>
-      <label>長さ: <span id="gen-length-label"></span>
-        <input id="gen-length" type="range" min="8" max="64" value="20">
-      </label>
-      <div class="checks">
-        <label><input type="checkbox" id="gen-lower" checked> 小文字</label>
-        <label><input type="checkbox" id="gen-upper" checked> 大文字</label>
-        <label><input type="checkbox" id="gen-digits" checked> 数字</label>
-        <label><input type="checkbox" id="gen-symbols" checked> 記号</label>
+      <div class="presets">
+        <button type="button" class="chip gen-preset" data-preset="standard">おすすめ</button>
+        <button type="button" class="chip gen-preset" data-preset="symbol">記号あり</button>
+        <button type="button" class="chip gen-preset" data-preset="short">短め</button>
+        <button type="button" class="chip gen-preset" data-preset="pin">数字のみ</button>
       </div>
+      <p class="muted small">ふつうは「おすすめ」のままで大丈夫です。サイトで使えないと言われたら、ボタンを押して作り直してください。選んだ形はこのサイト用に覚えておきます。</p>
+      <details class="gen-detail">
+        <summary>詳しく設定</summary>
+        <label>長さ: <span id="gen-length-label"></span>
+          <input id="gen-length" type="range" min="4" max="64" value="16">
+        </label>
+        <div class="checks">
+          <label><input type="checkbox" id="gen-lower" checked> 小文字</label>
+          <label><input type="checkbox" id="gen-upper" checked> 大文字</label>
+          <label><input type="checkbox" id="gen-digits" checked> 数字</label>
+        </div>
+        <label>記号
+          <select id="gen-symbols">
+            <option value="none">なし</option>
+            <option value="safe">よく使える記号だけ（- _ . ! @ #）</option>
+            <option value="all">いろいろな記号</option>
+          </select>
+        </label>
+      </details>
       <div class="actions">
         <button type="button" id="gen-refresh">再生成</button>
         <span class="spacer"></span>
@@ -250,6 +266,7 @@
         <ol>
           <li>右下の ＋ → サービス名・ユーザー名・URL を入力。</li>
           <li>新しいサービスなら「パスワードを生成…」→「使う」。今使っているパスワードがあるならそれを入力。</li>
+          <li>サイトで「使えない文字がある」「長すぎる」などと言われたら、もう一度「パスワードを生成…」で「記号あり」「短め」などを押して作り直す（次からそのサイトではその形で作ります）。</li>
           <li>「保存」。新しいサービスは、保存してからサイトの登録画面に貼り付けると、途中で失敗してもパスワードが残ります。</li>
         </ol>
       </details>

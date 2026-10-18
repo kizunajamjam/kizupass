@@ -158,3 +158,9 @@ dialog::backdrop { background: rgb(0 0 0 / 45%); }
 .help dt { font-weight: 600; margin-top: 8px; }
 .help dd { margin: 2px 0 0 1em; color: var(--muted); }
 .help-open.link { display: block; margin: 12px auto 0; }
+
+/* 生成の型 */
+.presets { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 4px; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.gen-detail summary { cursor: pointer; color: var(--accent); font-size: .9rem; padding: 6px 0; }
+select { display: block; width: 100%; margin-top: 4px; padding: 10px 12px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
